@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Mac rendszerfájlok
+.DS_Store
+
+# Modellek (ha nem akarod GitHubra feltölteni a súlyokat)
+# *.keras
