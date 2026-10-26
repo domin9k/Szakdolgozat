@@ -1,0 +1,10 @@
+{
+    "name": "DermAI Scan",
+    "short_name": "DermAI",
+    "description": "AI-powered skin lesion screening using deep learning models",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#f5f2ec",
+    "theme_color": "#7a9e7e"
+}
