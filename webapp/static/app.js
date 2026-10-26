@@ -45,13 +45,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 600);
     }, 2800);
 
-    // Register service worker
+    // Clean up service workers and caches
     if ('serviceWorker' in navigator) {
         try {
-            await navigator.serviceWorker.register('/sw.js');
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const r of registrations) {
+                await r.unregister();
+            }
         } catch (e) {
-            console.log('SW registration failed:', e);
+            console.log('SW unregister failed:', e);
         }
+    }
+    if ('caches' in window) {
+        try {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+        } catch (e) {}
     }
 });
 
