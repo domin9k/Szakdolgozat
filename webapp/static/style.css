@@ -300,10 +300,10 @@ body {
 
 .action-btn {
     display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.25rem;
-    border: 1px solid rgba(122, 158, 126, 0.18);
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1.15rem 1.4rem;
+    border: 1px solid rgba(122, 158, 126, 0.22);
     border-radius: var(--radius-lg);
     background: var(--bg-card);
     color: var(--text-primary);
@@ -311,67 +311,45 @@ body {
     text-align: left;
     transition: all 0.25s ease;
     font-family: var(--font);
+    width: 100%;
 }
 
 .action-btn:active {
-    transform: scale(0.97);
+    transform: scale(0.98);
 }
 
 .action-btn.primary {
     background: linear-gradient(135deg, rgba(122, 158, 126, 0.15), rgba(163, 196, 166, 0.12));
-    border-color: rgba(122, 158, 126, 0.3);
+    border-color: rgba(122, 158, 126, 0.35);
 }
 
 .action-btn.primary:hover {
     background: linear-gradient(135deg, rgba(122, 158, 126, 0.22), rgba(163, 196, 166, 0.16));
-    border-color: rgba(122, 158, 126, 0.45);
+    border-color: rgba(122, 158, 126, 0.5);
     box-shadow: var(--shadow-glow);
 }
 
 .action-btn.secondary:hover {
     background: var(--bg-card-hover);
-    border-color: rgba(122, 158, 126, 0.3);
-}
-
-.btn-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: var(--radius-md);
-    background: var(--accent-gradient);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.btn-icon svg {
-    width: 22px;
-    height: 22px;
-    color: white;
+    border-color: rgba(122, 158, 126, 0.35);
 }
 
 .btn-text {
-    flex: 1;
+    width: 100%;
 }
 
 .btn-label {
     display: block;
-    font-size: 1rem;
+    font-size: 1.05rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
 .btn-sublabel {
     display: block;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-top: 2px;
-}
-
-.btn-arrow {
-    width: 20px;
-    height: 20px;
-    color: var(--text-muted);
-    flex-shrink: 0;
+    margin-top: 4px;
 }
 
 /* Info Cards */
@@ -544,50 +522,38 @@ body {
 }
 
 .cam-btn {
-    background: rgba(255, 255, 255, 0.15);
-    border: none;
-    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 24px;
     color: white;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: var(--font);
+    padding: 0.65rem 1.25rem;
     backdrop-filter: blur(8px);
-    transition: transform 0.15s;
+    transition: transform 0.15s, background 0.2s;
 }
 
 .cam-btn:active {
-    transform: scale(0.9);
-}
-
-.cam-btn.back,
-.cam-btn.switch {
-    width: 48px;
-    height: 48px;
-}
-
-.cam-btn.back svg,
-.cam-btn.switch svg {
-    width: 22px;
-    height: 22px;
+    transform: scale(0.95);
 }
 
 .cam-btn.capture {
-    width: 72px;
-    height: 72px;
     background: white;
-    position: relative;
-}
-
-.capture-ring {
-    width: 60px;
-    height: 60px;
-    border: 3px solid var(--bg-primary);
-    border-radius: 50%;
+    color: #1c2b1e;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 0.85rem 2rem;
+    border: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
 .cam-btn.capture:active {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.85);
 }
 
 /* Capture animation */
@@ -632,27 +598,22 @@ body {
     font-weight: 600;
 }
 
-.icon-btn {
-    width: 40px;
-    height: 40px;
-    border: none;
-    background: rgba(45, 58, 46, 0.06);
+.text-nav-btn {
+    padding: 0.45rem 0.9rem;
+    border: 1px solid rgba(45, 58, 46, 0.15);
+    background: rgba(45, 58, 46, 0.05);
     border-radius: var(--radius-sm);
     color: var(--text-primary);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s;
+    font-size: 0.85rem;
+    font-weight: 500;
+    font-family: var(--font);
+    transition: all 0.2s ease;
 }
 
-.icon-btn:hover {
-    background: rgba(45, 58, 46, 0.08);
-}
-
-.icon-btn svg {
-    width: 20px;
-    height: 20px;
+.text-nav-btn:hover {
+    background: rgba(45, 58, 46, 0.1);
+    border-color: rgba(45, 58, 46, 0.25);
 }
 
 .preview-body {

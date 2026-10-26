@@ -296,10 +296,7 @@ async function showPreview(imageSource) {
             analyzeBtn.textContent = 'Quality too low';
         } else {
             analyzeBtn.disabled = false;
-            analyzeBtn.innerHTML = `
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                Analyze
-            `;
+            analyzeBtn.textContent = 'Analyze';
         }
     } catch (e) {
         qualityBadge.textContent = 'Check failed';

@@ -1,11 +1,11 @@
 // DermAI Scan — Service Worker
 // Caches the app shell for offline functionality
 
-const CACHE_NAME = 'dermai-scan-v1';
+const CACHE_NAME = 'dermai-scan-v3';
 const ASSETS_TO_CACHE = [
     '/',
-    '/static/style.css',
-    '/static/app.js',
+    '/static/style.css?v=3',
+    '/static/app.js?v=3',
     '/manifest.json',
 ];
 
