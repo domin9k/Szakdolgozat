@@ -262,35 +262,45 @@ Az EfficientNetB0 mélydiagnosztikai futtatásakor a rendszer **Test-Time Augmen
 
 ---
 
-## 4. Tervezési döntések és alternatívák összehasonlító elemzése
+## 4. Módszertani Összegzés és Tudományos Érvelés (Methodology & Scientific Defense Framework)
 
-Az alábbi döntési mátrix összefoglalja, hogy az alkalmazásban miért az adott megoldást választottuk a lehetséges alternatívákkal szemben:
+### 4.1. Módszertani hitvallás és a „Domain Gap” minimalizálása
+Az előfeldolgozási folyamat megtervezésekor alapvető mérnöki és orvostechnikai célkitűzés volt, hogy a rendszer minimálisra csökkentse a valós klinikai/felhasználói környezet és a laboratóriumi tanító adatbázisok (HAM10000, ISIC) közötti eltérést (*Domain Gap*, illetve *Covariate Shift* [10]).
 
-```
-+-----------------------------------------------------------------------------------------------------------------------------------+
-|                                            TERVEZÉSI DÖNTÉSEK DÖNTÉSI MÁTRIXA                                                     |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Komponens               | Választott megoldás             | Alternatíva                       | Indoklás / Előny a projekthez     |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Képarány kezelése       | Központi négyzetes vágás        | Nyújtás / Torzítás (Stretching)   | Megőrzi az aszimmetriát és alaktani|
-|                         | (Center Square Crop)            | vagy Padding (Fekete keret)       | határokat (ABCD szabály védelme). |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Átméretezési szűrő      | Lanczos-3 interpoláció          | Bilineáris vagy Nearest Neighbor  | Kiváló magas frekvenciás élesség; |
-|                         | (Image.LANCZOS)                 |                                   | minimális lépcsőzöttség/aliasing. |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Életlenség szűrése      | Laplace-variancia (OpenCV)      | FFT frekvencia-analízis           | O(N) futási idő valós időben;     |
-|                         | (Var(ΔI) >= 80)                 | vagy manuális emberi felülvizsgálat| közvetlenül detektálja az éleket. |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Rossz minőség kezelése  | Fail-Fast elv: HTTP 422 hiba    | Rossz kép feldolgozása alacsony   | Betegbiztonság: megelőzi a fals   |
-|                         | és elutasítás magyarázattal     | megbízhatósági pontszámmal        | negatív leletet és a hamis pánikot|
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Intenzitás skálázás     | Modell-specifikus normalizáció  | Általános 0-255 vagy fix z-score  | Megfelel az előtanított ImageNet és|
-|                         | (MobileNet: [-1,1], EffNet: [0,1]|                                  | HAM10000 gerinchálók súlyainak.   |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-| Predikció robusztusság  | Test-Time Augmentation (TTA)    | Egyszeri determinisztikus futtatás| Diéder-invariancia kihasználása;  |
-|                         | (5 lépéses soft voting)         |                                   | kisimítja a döntési felületet.    |
-+-------------------------+---------------------------------+-----------------------------------+-----------------------------------+
-```
+A szakirodalomban gyakran elkövetett hiba a képek kritika nélküli átméretezése és a minőségi szűrés hiánya. A jelen szoftverben alkalmazott lépések mindegyike közvetlen orvosi vagy matematikai indokkal rendelkezik:
+1. **A képarány-megőrzés** a morfológiai diagnosztika (ABCD-szabály) sértetlenségét szavatolja.
+2. **A Laplace-varianciára épülő képminőség-ellenőrzés** orvosetikai szempontból zárja ki a félrevezető leleteket és a fals negatív diagnózist (*Fail-Fast elv*).
+3. **A Lanczos-3 szűrés** a konvolúciós szűrők matematikai érzékenységét és a nagyfrekvenciás pigmenthálózati mintázatok megőrzését biztosítja minimális mintavételezési lépcsőzöttség (*aliasing*) mellett.
+4. **A modell-specifikus normalizáció** megakadályozza a hálózatok belső aktivációs rétegeinek telítődését, illeszkedve a MobileNetV2 és az EfficientNetB0 előtanított architektúrájához.
+5. **A Test-Time Augmentation (TTA)** a dermatológiai felvételek természetes orientáció-függetlenségét ($D_4$ diéder-szimmetria) aknázza ki a döntési határok elsimítására és az episztemikus bizonytalanság csökkentésére.
+
+---
+
+### 4.2. A 4 Fő Érvelési Pillér
+
+1. **Klinikai és Diagnosztikai Dimenzió:**
+   * A melanoma agresszív természetéből adódóan a téves negatív lelet közvetlen életveszélyt jelent, míg a magas téves pozitív ráta indokolatlan biopsziákhoz vezet. A képfeldolgozásnak minden körülmények között óvnia kell az anyajegyek valós határait és aszimmetriáját.
+2. **Matematikai és Jelfeldolgozási Dimenzió:**
+   * A Laplace-operátor mint második parciális derivált ($\nabla^2 I$) az intenzitás-ugrások élmeredekségét vizsgálja $O(N)$ komplexitással, míg a sinc-alapú Lanczos kernel frekvenciatartományban az ideális aluláteresztő szűrő megvalósítása.
+3. **Mélytanulási (Deep Learning) Dimenzió:**
+   * A neurális hálózatok súlyai az ImageNet és HAM10000 eloszlásokra konvergáltak; a bemeneti skálák eltérése matematikai működésképtelenséget idéz elő. A TTA soft-voting átlagolása csökkenti a lokális mikrozajok okozta varianciát.
+4. **Rendszertervezési és Felhasználói (UX) Dimenzió:**
+   * A kliensoldali elővágás és a 0.92-es JPEG faktor 80–85%-kal csökkenti a hálózati sávszélességet, a HTTP 422 elutasítás pedig megvédi a szervert a felesleges GPU/CPU terheléstől.
+
+---
+
+### 4.3. Kontrasztos Döntési és Érvelési Mátrix
+
+Az alábbi kontrasztos táblázat pontról pontra szembeállítja a DermAI Scan-ben alkalmazott mérnöki megoldásokat a gyakori, leegyszerűsített alternatívákkal, megindokolva azok műszaki és orvosi hibáit:
+
+| Lépés a DermAI Scan-ben | Egyszerűbb / Tipikus alternatíva | Mi lett volna a hiba az alternatívával? (Miért nem elfogadható?) |
+| :--- | :--- | :--- |
+| **Központi négyzetes vágás (Square Crop)** | Egyszerű átméretezés / Nyújtás (*Stretching*) | **Geometriai torzulás:** a kör alakú anyajegy ellipszissé deformálódik, felborítva az orvosi **ABCD-szabály aszimmetria („A”) és határegyenetlenség („B”)** kritériumát; mesterséges malignitási jeleket kelt vagy valós szabálytalanságot simít el. |
+| **Laplace-varianciás IQA szűrés** | Nincs szűrés, minden beérkező képet elemez | **Fals negatív életveszély:** életlen/homályos képen a konvolúciós háló nem érzékeli a nagyfrekvenciás pigmenthálózatot, az elváltozást épnek minősíti, és hamis biztonságérzetet adva késlelteti az orvosi ellátást. |
+| **3-csatornás sRGB kényszerítés** | Nyers fájl közvetlen átadása a hálózatnak | **Szerverösszeomlás és inkompatibilitás:** a PNG formátumok 4. transzparencia-rétege (RGBA) tenzorméret-hibát (`ValueError: Channels mismatch`) vált ki a TensorFlow futtatókörnyezetben. |
+| **Lanczos-3 interpoláció** | Bilineáris vagy Nearest Neighbor átméretezés | **Információvesztés és lépcsőzöttség:** a bilineáris simítás elkeni a mikroszkopikus kontúrokat, a Nearest Neighbor pedig durva lépcsőzöttséget (*aliasing*) okoz, ami rontja a lézió széleinek osztályozását. |
+| **Kétágú modell-specifikus normalizáció** | Egységesített globális osztás ($x / 255.0$) | **Kovariancia-eltolódás és súlyhibák:** a MobileNetV2 eredetileg zéró-közepesített $[-1, 1]$ tartományra lett előtanítva; eltérő skálán a ReLU6 telítődik, a döntési bizonytalanság megnő. |
+| **Test-Time Augmentation (TTA)** | Egyszeri, determinisztikus predikció | **Zajérzékenység és instabilitás:** egyetlen felvétel esetén a képi mikrozajok torzíthatják a kimenetet. A $D_4$ diéder tükrözések átlagolása 2–4%-kal növeli az AUC értéket és a kalibrációt. |
 
 ---
 
