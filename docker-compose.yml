@@ -1,18 +1,20 @@
-version: '3.8'
-
 services:
   dermai-scan:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: dermai-scan
+    image: dermai-scan:latest
     ports:
       - "8000:8000"
     restart: unless-stopped
     environment:
       - PORT=8000
+      - TF_CPP_MIN_LOG_LEVEL=2
+      - PYTHONUNBUFFERED=1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
+      start_period: 45s
       retries: 3

@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Documentation & large non-runtime files
+*.docx
+*.pdf
+*.md
+DermAI_Scan_Webapp_Dokumentacio.docx
+Dokumentacio_v3.docx
+DermAI_Scan_Preprocessing_Dokumentacio.pdf
+PREPROCESSING.pdf
+PREPROCESSING.md
+README.md
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Python & testing cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Environment & IDE
+.env
+.venv
+venv/
+env/
+.idea/
+.vscode/
+
