@@ -49,10 +49,11 @@ flowchart TD
         L -- Nem --> M["HTTP 422: Elutasítás + Klinikai tanácsok"]
     end
 
-    subgraph Transformation ["4. Geometriai és Tenzor transzformációk"]
+    subgraph Transformation ["4. Geometriai és Szövet-helyreállítási Transzformációk"]
         L -- Igen --> N["Központi négyzetes kivágás (Crop)"]
         N --> O["Lanczos-3 átméretezés: 224x224 px"]
-        O --> P["Tenzorrá alakítás: shape=(1, 224, 224, 3)"]
+        O --> O2["DullRazor szőreltávolítás & Telea inpainting"]
+        O2 --> P["Tenzorrá alakítás: shape=(1, 224, 224, 3)"]
     end
 
     subgraph Normalization ["5. Modell-specifikus Normalizáció"]
@@ -204,7 +205,24 @@ Turkowski [12] részletes elemzésében kimutatta, hogy a nagyfrekvenciás orvos
 
 ---
 
-### 3.5. Modell-specifikus Intenzitás-normalizáció (Feature Scaling)
+### 3.5. Digitális szőreltávolítás: DullRazor algoritmus és Telea inpainting [15]
+
+A klinikai dermatológiában a szőrszálak az egyik leggyakoribb műtermékforrást (artifact) jelentik. A sötét, vékony szőrszálak elfedik a lézió belső pigmenthálózatát, és a konvolúciós hálózatok éldetektorait hamis szabálytalan határvonalakká (Border irregularity) és aszimmetriává tévesztik meg.
+
+A DermAI Scan a nemzetközi szakirodalom aranystandardjának számító **DullRazor algoritmust** [15] alkalmazza:
+1. **Morfológiai Black-Hat transzformáció:**
+   A képet szürkeárnyalatossá alakítjuk ($I_{gray}$), majd egy $7 \times 7$-es téglalap alakú strukturáló elemmel ($B$) elvégezzük a Black-Hat műveletet:
+   $$\text{BlackHat}(I_{gray}) = \text{Closing}(I_{gray}, B) - I_{gray} = ((I_{gray} \oplus B) \ominus B) - I_{gray}$$
+   Ez a művelet izolálja a környezetüknél lokálisan sötétebb, vékony lineáris alakzatokat (szőrszálakat).
+2. **Dinamikus bináris küszöbölés:**
+   A Black-Hat eredményéből intenzitásküszöböléssel egy bináris szőrszál-maszkot ($M$) hozunk létre:
+   $$M(x, y) = \begin{cases} 255, & \text{ha } \text{BlackHat}(x,y) > 12 \\ 0, & \text{egyébként} \end{cases}$$
+3. **Telea-féle Inpainting (Képrekonstrukció):**
+   Amennyiben a maszkolt terület meghaladja a zajküszöböt ($N_{pixels} > 30$), de nem fedi le a teljes képet ($< 20\%$), a Fast Marching Method alapú Telea algoritmus a szomszédos ép bőrfelület és lézió textúrájával tölti ki a szőrszálak helyét, megőrizve a lézió valódi formáját.
+
+---
+
+### 3.6. Modell-specifikus Intenzitás-normalizáció (Feature Scaling)
 
 A gépi tanulásban a neurális hálózatok optimalizálása (gradiens ereszkedés, backpropagation) akkor a legstabilabb, ha a bemeneti változók nulla körüli, jól skálázott tartományba esnek. Mivel a rendszer két különböző gerinchálózatot (backbone) alkalmaz, a normalizáció modell-specifikusan kettéválik:
 
@@ -239,7 +257,7 @@ A gépi tanulásban a neurális hálózatok optimalizálása (gradiens ereszked�
 
 ---
 
-### 3.6. Test-Time Augmentation (TTA – Predikció-közbeni Adatbővítés)
+### 3.7. Test-Time Augmentation (TTA – Predikció-közbeni Adatbővítés)
 
 Az EfficientNetB0 mélydiagnosztikai futtatásakor a rendszer **Test-Time Augmentation (TTA)** eljárást alkalmaz ([predict_with_tta](file:///Users/laszlodominik/Desktop/Projektmunka_2/webapp/server.py#L169-L191)).
 
@@ -299,6 +317,7 @@ Az alábbi kontrasztos táblázat pontról pontra szembeállítja a DermAI Scan-
 | **Laplace-varianciás IQA szűrés** | Nincs szűrés, minden beérkező képet elemez | **Fals negatív életveszély:** életlen/homályos képen a konvolúciós háló nem érzékeli a nagyfrekvenciás pigmenthálózatot, az elváltozást épnek minősíti, és hamis biztonságérzetet adva késlelteti az orvosi ellátást. |
 | **3-csatornás sRGB kényszerítés** | Nyers fájl közvetlen átadása a hálózatnak | **Szerverösszeomlás és inkompatibilitás:** a PNG formátumok 4. transzparencia-rétege (RGBA) tenzorméret-hibát (`ValueError: Channels mismatch`) vált ki a TensorFlow futtatókörnyezetben. |
 | **Lanczos-3 interpoláció** | Bilineáris vagy Nearest Neighbor átméretezés | **Információvesztés és lépcsőzöttség:** a bilineáris simítás elkeni a mikroszkopikus kontúrokat, a Nearest Neighbor pedig durva lépcsőzöttséget (*aliasing*) okoz, ami rontja a lézió széleinek osztályozását. |
+| **DullRazor szőreltávolítás & Telea inpainting** | Nyers szőrös kép feldolgozása vagy Gauss-homályosítás | **Műtermékek és téves aszimmetria:** a sötét szőrszálakat a konvolúciós hálózat atipikus pigmenthálózatnak vagy szabálytalan határnak értékeli (fals pozitív kockázat); a Gauss-elmosás viszont a lézió diagnosztikai éleit is visszafordíthatatlanul elpusztítja. |
 | **Kétágú modell-specifikus normalizáció** | Egységesített globális osztás ($x / 255.0$) | **Kovariancia-eltolódás és súlyhibák:** a MobileNetV2 eredetileg zéró-közepesített $[-1, 1]$ tartományra lett előtanítva; eltérő skálán a ReLU6 telítődik, a döntési bizonytalanság megnő. |
 | **Test-Time Augmentation (TTA)** | Egyszeri, determinisztikus predikció | **Zajérzékenység és instabilitás:** egyetlen felvétel esetén a képi mikrozajok torzíthatják a kimenetet. A $D_4$ diéder tükrözések átlagolása 2–4%-kal növeli az AUC értéket és a kalibrációt. |
 
@@ -320,3 +339,4 @@ Az alábbi kontrasztos táblázat pontról pontra szembeállítja a DermAI Scan-
 * **[12] K. Turkowski**, „Filters for common resampling tasks,” in *Graphics Gems*, A. S. Glassner, Ed. Academic Press, 1990, pp. 147–165.
 * **[13] M. S. Ayhan and P. Berens**, „Test-time data augmentation for estimation of heteroscedastic aleatoric uncertainty in deep neural networks,” in *Medical Imaging with Deep Learning (MIDL)*, Amsterdam, 2018.
 * **[14] K. Matsunaga, A. Hamada, A. Minagawa, and H. Koga**, „Image classification of melanoma using deep convolutional neural networks for the ISIC 2017 challenge,” *arXiv preprint arXiv:1703.04877*, 2017.
+* **[15] T. Lee, V. Ng, R. Gallagher, A. Coldman, and D. McLean**, „DullRazor: A software approach to hair removal from images,” *Computers in Biology and Medicine*, vol. 27, no. 6, pp. 533–543, 1997. doi: 10.1016/S0010-4825(97)00020-6.

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Callable
 
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw, ImageFilter
 
 # Suppress TF warnings
@@ -119,6 +120,26 @@ CROP_METHODS = {
 # TTA variánsok
 TTA_STEPS_OPTIONS = [1, 3, 5, 7]  # 1 = nincs TTA (egyetlen futtatás)
 
+# DullRazor szőreltávolítás (Lee et al., 1997)
+def apply_dull_razor(img: Image.Image) -> Image.Image:
+    """DullRazor digital hair removal algorithm (Lee et al., 1997)."""
+    img_np = np.array(img)
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+    blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+    _, mask = cv2.threshold(blackhat, 12, 255, cv2.THRESH_BINARY)
+    hair_pixels = int(cv2.countNonZero(mask))
+    max_hair_pixels = int(0.20 * img_np.shape[0] * img_np.shape[1])
+    if 30 < hair_pixels < max_hair_pixels:
+        inpainted = cv2.inpaint(img_np, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        return Image.fromarray(inpainted)
+    return img
+
+HAIR_REMOVAL_METHODS = {
+    "dullrazor": ("DullRazor (Aktív)", apply_dull_razor),
+    "none":      ("Nyers (Kikapcsolva)", lambda img: img),
+}
+
 
 # 2. SZINTETIKUS TESZTKÉP-GENERÁLÁS
 def create_synthetic_lesion(size=(400, 300), lesion_color=(90, 50, 40),
@@ -161,6 +182,13 @@ def create_test_images():
     images["high_contrast"] = create_synthetic_lesion(size=(400, 300),
                                                       lesion_color=(30, 10, 10),
                                                       bg_color=(240, 210, 200), seed=42)
+    # 6. Szőrös lézió (szőrszál-vonalakkal átfedett felület)
+    hairy = create_synthetic_lesion(size=(400, 300), seed=42)
+    draw_h = ImageDraw.Draw(hairy)
+    draw_h.line([(80, 50), (320, 250)], fill=(30, 20, 15), width=2)
+    draw_h.line([(120, 260), (280, 40)], fill=(40, 25, 20), width=3)
+    draw_h.line([(50, 180), (350, 120)], fill=(25, 15, 10), width=2)
+    images["hairy_lesion"] = hairy
     return images
 
 
@@ -203,6 +231,7 @@ def predict_with_tta(img_batch, model, steps=5):
 
 def run_single_prediction(img, model, model_name,
                           crop_fn, interp_method, norm_fn,
+                          hair_fn=apply_dull_razor,
                           tta_steps=1):
     """Egyetlen predikció a megadott preprocessing-beállításokkal."""
     t0 = time.perf_counter()
@@ -213,14 +242,17 @@ def run_single_prediction(img, model, model_name,
     # 2. Resize
     resized = cropped.resize((IMG_SIZE, IMG_SIZE), interp_method)
 
-    # 3. Array + Batch dim
-    arr = np.array(resized, dtype=np.float32)
+    # 3. DullRazor szőreltávolítás
+    cleaned = hair_fn(resized)
+
+    # 4. Array + Batch dim
+    arr = np.array(cleaned, dtype=np.float32)
     batch = np.expand_dims(arr, axis=0)
 
-    # 4. Normalizáció
+    # 5. Normalizáció
     batch = norm_fn(batch)
 
-    # 5. Predikció (TTA vagy egyszerű)
+    # 6. Predikció (TTA vagy egyszerű)
     if tta_steps > 1:
         raw_output = predict_with_tta(batch, model, steps=tta_steps)
     else:
@@ -245,6 +277,7 @@ class AblationResult:
     label: str
     confidence: float
     time_ms: float
+    hair_removal: str = "DullRazor"
     is_baseline: bool = False
 
 
@@ -393,6 +426,28 @@ def run_ablation_tests(models, test_images):
                     ))
                     total_tests += 1
 
+            # ── F) DULLRAZOR SZŐRELTÁVOLÍTÁS ABLÁCIÓJA ──────────────
+            score, ms = run_single_prediction(
+                img, model, model_name,
+                crop_fn=baseline_crop_fn,
+                interp_method=baseline_interp,
+                norm_fn=correct_norm_fn,
+                hair_fn=HAIR_REMOVAL_METHODS["none"][1],
+                tta_steps=1
+            )
+            label, conf = score_to_label(score)
+            results.append(AblationResult(
+                test_name="Szőreltávolítás: Nyers (Kikapcsolva)",
+                image_name=img_name, model_name=model_name,
+                crop_method=CROP_METHODS[BASELINE_CROP][0],
+                interpolation=BASELINE_INTERP,
+                normalization=NORMALIZATION_METHODS[correct_norm_key][0],
+                tta_steps=1, score=score, label=label,
+                confidence=conf, time_ms=ms,
+                hair_removal="Nyers (Kikapcsolva)"
+            ))
+            total_tests += 1
+
     print(f"\n  Összesen {total_tests} tesztkonfigurációt futtattunk le.")
     return results
 
@@ -454,10 +509,11 @@ def print_summary_comparison(results: List[AblationResult]):
     print(f"{'═' * 100}")
 
     categories = {
-        "Interpoláció":  [r for r in results if r.test_name.startswith("Interpoláció:")],
-        "Crop":          [r for r in results if r.test_name.startswith("Crop:")],
-        "Normalizáció":  [r for r in results if r.test_name.startswith("Normalizáció:")],
-        "TTA":           [r for r in results if r.test_name.startswith("TTA")],
+        "Interpoláció":    [r for r in results if r.test_name.startswith("Interpoláció:")],
+        "Crop":            [r for r in results if r.test_name.startswith("Crop:")],
+        "Normalizáció":    [r for r in results if r.test_name.startswith("Normalizáció:")],
+        "TTA":             [r for r in results if r.test_name.startswith("TTA")],
+        "Szőreltávolítás": [r for r in results if r.test_name.startswith("Szőreltávolítás:")],
     }
 
     baselines = {(r.model_name, r.image_name): r.score
@@ -504,13 +560,14 @@ def export_csv(results: List[AblationResult], filepath: str):
         writer = csv.writer(f, delimiter=";")
         writer.writerow([
             "Teszt", "Kép", "Modell", "Crop", "Interpoláció",
-            "Normalizáció", "TTA_lépések", "Score", "Címke",
+            "Normalizáció", "Szőreltávolítás", "TTA_lépések", "Score", "Címke",
             "Konfidencia_%", "Idő_ms", "Baseline"
         ])
         for r in results:
             writer.writerow([
                 r.test_name, r.image_name, r.model_name,
                 r.crop_method, r.interpolation, r.normalization,
+                r.hair_removal,
                 r.tta_steps, f"{r.score:.6f}", r.label,
                 f"{r.confidence:.1f}", f"{r.time_ms:.1f}",
                 "igen" if r.is_baseline else "nem"

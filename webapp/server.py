@@ -138,17 +138,56 @@ def square_crop_center(img: Image.Image) -> Image.Image:
     return img.crop((left, top, left + side, top + side))
 
 
-def preprocess_for_model(img: Image.Image, model_name: str) -> np.ndarray:
+def apply_dull_razor(img: Image.Image) -> tuple[Image.Image, dict]:
+    """
+    DullRazor digital hair removal algorithm (Lee et al., 1997).
+    
+    Removes hair occlusions that can distort lesion borders and cause false positives:
+    1. Grayscale conversion
+    2. Morphological Black-Hat transform with a 7x7 rectangular structuring element
+    3. Binary thresholding to generate hair mask
+    4. Telea inpainting to reconstruct occluded skin patterns
+    """
+    img_np = np.array(img)
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    
+    # Structuring element optimized for 224x224 input
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+    blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+    
+    # Isolate pixels noticeably darker than the surrounding skin/lesion
+    _, mask = cv2.threshold(blackhat, 12, 255, cv2.THRESH_BINARY)
+    
+    hair_pixels = int(cv2.countNonZero(mask))
+    max_hair_pixels = int(0.20 * img_np.shape[0] * img_np.shape[1])
+    
+    # Only inpaint if hair is actually detected (>30 px), but avoid masking large dark lesions (<20% of image)
+    if 30 < hair_pixels < max_hair_pixels:
+        inpainted = cv2.inpaint(img_np, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        return Image.fromarray(inpainted), {"hair_detected": True, "hair_pixels": hair_pixels}
+    
+    return img, {"hair_detected": False, "hair_pixels": hair_pixels}
+
+
+def preprocess_for_model(img: Image.Image, model_name: str, enable_hair_removal: bool = True) -> np.ndarray:
     """
     Full preprocessing pipeline:
-    1. Square crop from center
-    2. Resize to 224x224
-    3. Apply model-specific normalization
+    1. Square crop from center (if not square)
+    2. Resize to 224x224 (Lanczos-3)
+    3. DullRazor digital hair removal (if enabled)
+    4. Apply model-specific normalization
     """
     # Square crop
-    img = square_crop_center(img)
+    if img.size[0] != img.size[1]:
+        img = square_crop_center(img)
     # Resize to model input size
-    img = img.resize((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    if img.size != (IMG_SIZE, IMG_SIZE):
+        img = img.resize((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    
+    # Digital hair removal
+    if enable_hair_removal:
+        img, _ = apply_dull_razor(img)
+
     # Convert to array
     img_array = np.array(img, dtype=np.float32)
     # Add batch dimension
@@ -323,13 +362,17 @@ async def analyze_image(
             },
         )
 
-    # 4. Run predictions
+    # 4. Digital hair removal check
+    test_cropped = square_crop_center(img).resize((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    _, hair_info = apply_dull_razor(test_cropped)
+
     results = {
         "quality": quality,
         "predictions": {},
         "image_info": {
             "original_size": f"{img.size[0]}x{img.size[1]}",
             "processed_size": f"{IMG_SIZE}x{IMG_SIZE}",
+            "hair_removal": hair_info,
         },
     }
 
