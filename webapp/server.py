@@ -194,13 +194,10 @@ def preprocess_for_model(img: Image.Image, model_name: str, enable_hair_removal:
     img_batch = np.expand_dims(img_array, axis=0)
 
     # Apply model-specific preprocessing
-    if model_name == "mobilenet":
-        # MobileNetV2: scales pixels to [-1, 1]
-        img_batch = preprocess_mobilenet(img_batch.copy())
-    elif model_name == "efficientnet":
-        # EfficientNet: scales pixels to [0, 1] (just divides by 255 internally)
-        img_batch = preprocess_efficientnet(img_batch.copy())
-
+    # Mindkét modell belső Keras rétegeiben integrálva van a normalizálás:
+    # - MobileNetV2: TrueDivide (/127.5) + Subtract (-1.0)
+    # - EfficientNetB0: beépített Rescaling réteg
+    # Így mindkét modell a standard [0, 255] RGB float32 bemenetet fogadja közvetlenül.
     return img_batch
 
 
