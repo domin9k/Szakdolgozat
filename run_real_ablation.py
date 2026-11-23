@@ -22,10 +22,10 @@ BENIGN_DIR  = BASE_DIR / "valos_tesztkepek" / "Benign"
 MALIG_DIR   = BASE_DIR / "valos_tesztkepek" / "Malignant"
 MOBILE_PATH = BASE_DIR / "mobilenet_skin_model.keras"
 EFFNET_PATH = BASE_DIR / "efficientnet_skin_model.keras"
-OUT_DOCX    = BASE_DIR / "Valos_Kepek_Ablacio_Dokumentacio.docx"
+OUT_DOCX    = BASE_DIR / "Valos_Kepek_Teljes_Ablacio_Dokumentacio.docx"
 
 IMG_SIZE    = 224          # mindkét modell 224×224-et vár
-SAMPLE_N    = 150          # Benign + Malignant ablációs minta (összesen 300)
+SAMPLE_N    = 1300         # Teljes adathalmaz (1242 Benign + 1218 Malignant = 2460 kép)
 SEED        = 42
 THRESHOLD   = 0.5          # score > 0.5 → Malignant
 
