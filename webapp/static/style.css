@@ -12,6 +12,12 @@
     box-sizing: border-box;
 }
 
+button {
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0 !important;
+}
+
 :root {
     /* Color Palette — Sage & Warm Cream */
     --bg-primary: #f5f2ec;
@@ -37,10 +43,10 @@
     --danger-bg: rgba(194, 90, 90, 0.10);
     --uncertain: #c49a3c;
 
-    --radius-sm: 8px;
-    --radius-md: 14px;
-    --radius-lg: 20px;
-    --radius-xl: 28px;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
+    --radius-xl: 0px;
 
     --shadow-sm: 0 2px 8px rgba(45, 58, 46, 0.08);
     --shadow-md: 0 4px 24px rgba(45, 58, 46, 0.10);
@@ -117,7 +123,7 @@ body {
     width: 200px;
     height: 3px;
     background: var(--bg-card);
-    border-radius: 3px;
+    border-radius: 0;
     margin: 1.5rem auto 0;
     overflow: hidden;
 }
@@ -126,7 +132,7 @@ body {
     width: 0%;
     height: 100%;
     background: var(--accent-gradient);
-    border-radius: 3px;
+    border-radius: 0;
     animation: load-progress 2.5s ease forwards;
 }
 
@@ -375,7 +381,7 @@ body {
     justify-content: center;
     width: 24px;
     height: 24px;
-    border-radius: 6px;
+    border-radius: 0;
     background: rgba(122, 158, 126, 0.12);
     color: var(--accent-primary);
     font-size: 0.72rem;
@@ -469,7 +475,7 @@ body {
     left: 0;
     border-top-width: 3px;
     border-left-width: 3px;
-    border-radius: 8px 0 0 0;
+    border-radius: 0;
 }
 
 .corner.tr {
@@ -477,7 +483,7 @@ body {
     right: 0;
     border-top-width: 3px;
     border-right-width: 3px;
-    border-radius: 0 8px 0 0;
+    border-radius: 0;
 }
 
 .corner.bl {
@@ -485,7 +491,7 @@ body {
     left: 0;
     border-bottom-width: 3px;
     border-left-width: 3px;
-    border-radius: 0 0 0 8px;
+    border-radius: 0;
 }
 
 .corner.br {
@@ -493,7 +499,7 @@ body {
     right: 0;
     border-bottom-width: 3px;
     border-right-width: 3px;
-    border-radius: 0 0 8px 0;
+    border-radius: 0;
 }
 
 .guide-text {
@@ -503,7 +509,7 @@ body {
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
     background: rgba(0, 0, 0, 0.45);
     padding: 0.4rem 0.9rem;
-    border-radius: 20px;
+    border-radius: 0;
     backdrop-filter: blur(8px);
 }
 
@@ -524,7 +530,7 @@ body {
 .cam-btn {
     background: rgba(255, 255, 255, 0.18);
     border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 24px;
+    border-radius: 0;
     color: white;
     cursor: pointer;
     display: flex;
@@ -646,7 +652,7 @@ body {
     background: rgba(0, 0, 0, 0.6);
     color: var(--text-secondary);
     padding: 0.2rem 0.6rem;
-    border-radius: 6px;
+    border-radius: 0;
     font-size: 0.7rem;
     backdrop-filter: blur(8px);
 }
@@ -675,7 +681,7 @@ body {
 
 .quality-badge {
     padding: 0.2rem 0.65rem;
-    border-radius: 20px;
+    border-radius: 0;
     font-size: 0.72rem;
     font-weight: 600;
 }
@@ -937,7 +943,7 @@ body {
     width: 200px;
     height: 3px;
     background: var(--bg-card);
-    border-radius: 3px;
+    border-radius: 0;
     margin: 0 auto;
     overflow: hidden;
 }
@@ -945,7 +951,7 @@ body {
 .progress-bar {
     height: 100%;
     background: var(--accent-gradient);
-    border-radius: 3px;
+    border-radius: 0;
     width: 0%;
     transition: width 0.4s ease;
 }
@@ -1043,7 +1049,7 @@ body {
     color: var(--text-muted);
     background: var(--bg-secondary);
     padding: 0.15rem 0.5rem;
-    border-radius: 12px;
+    border-radius: 0;
 }
 
 .result-card-body {
@@ -1054,14 +1060,14 @@ body {
     position: relative;
     height: 8px;
     background: var(--bg-secondary);
-    border-radius: 8px;
+    border-radius: 0;
     overflow: hidden;
     margin-bottom: 0.85rem;
 }
 
 .result-score-fill {
     height: 100%;
-    border-radius: 8px;
+    border-radius: 0;
     transition: width 1s ease;
 }
 
@@ -1083,7 +1089,7 @@ body {
     width: 3px;
     height: 14px;
     background: white;
-    border-radius: 3px;
+    border-radius: 0;
     box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
     transition: left 1s ease;
 }
@@ -1194,6 +1200,68 @@ body {
 }
 
 /* --- Responsive tweaks --- */
+
+/* Extra-small phones (< 360px) */
+@media (max-width: 359px) {
+    .home-title {
+        font-size: 1.7rem;
+    }
+
+    .home-desc {
+        font-size: 0.85rem;
+    }
+
+    .action-btn {
+        padding: 0.9rem 1rem;
+    }
+
+    .btn-label {
+        font-size: 0.95rem;
+    }
+
+    .model-options {
+        grid-template-columns: 1fr;
+        gap: 0.4rem;
+    }
+
+    .model-btn {
+        padding: 0.5rem;
+    }
+
+    .preview-body {
+        padding: 0.75rem;
+    }
+
+    .results-body {
+        padding: 0.75rem;
+    }
+
+    .result-overall-label {
+        font-size: 1rem;
+    }
+}
+
+/* Small phones (360px – 479px) */
+@media (min-width: 360px) and (max-width: 479px) {
+    .home-title {
+        font-size: 2rem;
+    }
+
+    .model-options {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.35rem;
+    }
+
+    .model-name {
+        font-size: 0.75rem;
+    }
+
+    .model-desc {
+        font-size: 0.62rem;
+    }
+}
+
+/* Medium phones and up (480px+) */
 @media (min-width: 480px) {
     .home-title {
         font-size: 2.6rem;
@@ -1205,6 +1273,7 @@ body {
     }
 }
 
+/* Tablet and up (768px+) */
 @media (min-width: 768px) {
     .screen-home {
         padding: 2rem 1.5rem;
@@ -1212,6 +1281,98 @@ body {
 
     .home-title {
         font-size: 3rem;
+    }
+
+    .home-actions {
+        flex-direction: row;
+    }
+
+    .action-btn {
+        flex: 1;
+    }
+
+    .home-info {
+        flex-direction: row;
+    }
+
+    .info-card {
+        flex: 1;
+    }
+}
+
+/* Desktop (1024px+) */
+@media (min-width: 1024px) {
+    .screen {
+        max-width: 720px;
+    }
+
+    .results-actions {
+        max-width: 720px;
+    }
+
+    .home-hero {
+        padding: 3rem 1rem 1.5rem;
+    }
+}
+
+/* Touch targets — ensure minimum 44px tap area on touch devices */
+@media (pointer: coarse) {
+    .action-btn {
+        min-height: 56px;
+    }
+
+    .cam-btn {
+        min-height: 44px;
+        min-width: 72px;
+    }
+
+    .model-btn {
+        min-height: 48px;
+    }
+
+    .btn-primary,
+    .btn-secondary {
+        min-height: 48px;
+    }
+
+    .text-nav-btn {
+        min-height: 40px;
+        padding: 0.5rem 1rem;
+    }
+}
+
+/* Landscape orientation on phones */
+@media (max-height: 500px) and (orientation: landscape) {
+    .home-hero {
+        padding: 0.5rem 0.5rem 0.25rem;
+    }
+
+    .home-title {
+        font-size: 1.6rem;
+        margin-bottom: 0.4rem;
+    }
+
+    .home-desc {
+        font-size: 0.8rem;
+    }
+
+    .screen-home {
+        gap: 0.75rem;
+        padding: 0.75rem 1.25rem;
+    }
+
+    .hero-glow {
+        display: none;
+    }
+
+    .camera-controls {
+        padding: 0.75rem;
+        padding-bottom: calc(0.75rem + var(--safe-bottom));
+    }
+
+    .guide-corners {
+        width: 180px;
+        height: 180px;
     }
 }
 
@@ -1243,5 +1404,5 @@ body {
 
 ::-webkit-scrollbar-thumb {
     background: var(--bg-elevated);
-    border-radius: 4px;
+    border-radius: 0;
 }
