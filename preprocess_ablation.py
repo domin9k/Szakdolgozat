@@ -23,6 +23,7 @@ import os
 import sys
 import io
 import time
+import glob
 import argparse
 import warnings
 from dataclasses import dataclass, field
@@ -120,75 +121,57 @@ CROP_METHODS = {
 # TTA variánsok
 TTA_STEPS_OPTIONS = [1, 3, 5, 7]  # 1 = nincs TTA (egyetlen futtatás)
 
-# DullRazor szőreltávolítás (Lee et al., 1997)
+# DullRazor szőreltávolítás (Továbbfejlesztett, geometriailag szűrt változat)
 def apply_dull_razor(img: Image.Image) -> Image.Image:
-    """DullRazor digital hair removal algorithm (Lee et al., 1997)."""
+    """Intelligens (Advanced) DullRazor szőreltávolítás geometriai szűréssel és pigmentvédelemmel."""
     img_np = np.array(img)
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
     blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
-    _, mask = cv2.threshold(blackhat, 12, 255, cv2.THRESH_BINARY)
-    hair_pixels = int(cv2.countNonZero(mask))
+    _, raw_mask = cv2.threshold(blackhat, 12, 255, cv2.THRESH_BINARY)
+    
+    # Geometriai kontúrszűrés: kizárja a körkörös/szabálytalan pigmenteket és léziószéleket
+    filtered_mask = np.zeros_like(raw_mask)
+    contours, _ = cv2.findContours(raw_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        aspect_ratio = max(w, h) / (min(w, h) + 1e-3)
+        if aspect_ratio >= 3.0 and max(w, h) >= 15:
+            cv2.drawContours(filtered_mask, [cnt], -1, 255, -1)
+
+    hair_pixels = int(cv2.countNonZero(filtered_mask))
     max_hair_pixels = int(0.20 * img_np.shape[0] * img_np.shape[1])
-    if 30 < hair_pixels < max_hair_pixels:
-        inpainted = cv2.inpaint(img_np, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+    if 200 <= hair_pixels < max_hair_pixels:
+        inpainted = cv2.inpaint(img_np, filtered_mask, inpaintRadius=1, flags=cv2.INPAINT_TELEA)
         return Image.fromarray(inpainted)
     return img
 
 HAIR_REMOVAL_METHODS = {
-    "dullrazor": ("DullRazor (Aktív)", apply_dull_razor),
+    "dullrazor": ("Advanced DullRazor (Geometriai szűréssel)", apply_dull_razor),
     "none":      ("Nyers (Kikapcsolva)", lambda img: img),
 }
 
 
-# 2. SZINTETIKUS TESZTKÉP-GENERÁLÁS
-def create_synthetic_lesion(size=(400, 300), lesion_color=(90, 50, 40),
-                            bg_color=(220, 185, 170), seed=42):
-    """Szintetikus bőrelváltozást tartalmazó tesztkép (nem négyzetes!)."""
-    rng = np.random.RandomState(seed)
-    img = Image.new("RGB", size, bg_color)
-
-    # Bőrtextúra szimuláció zajjal
-    pixels = np.array(img)
-    noise = rng.normal(0, 6, pixels.shape).astype(np.int16)
-    pixels = np.clip(pixels.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-    img = Image.fromarray(pixels)
-    draw = ImageDraw.Draw(img)
-
-    # Központi lézió
-    cx, cy = size[0] // 2, size[1] // 2
-    r = min(size) // 5
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=lesion_color)
-
-    # Enyhe blur az organikus megjelenésért
-    img = img.filter(ImageFilter.GaussianBlur(radius=1.5))
-    return img
-
-
-def create_test_images():
-    """Több tesztképet generál különböző tulajdonságokkal."""
+# 2. VALÓS TESZTKÉPEK BETÖLTÉSE
+def load_real_test_images(max_per_class: int = 3) -> dict[str, Image.Image]:
+    """Valós klinikai dermoszkópos tesztképeket tölt be a valos_tesztkepek mappából."""
     images = {}
-    # 1. Normál lézió (4:3 arány – nem négyzetes!)
-    images["normal_4x3"] = create_synthetic_lesion(size=(400, 300), seed=42)
-    # 2. Négyzetes kép
-    images["normal_1x1"] = create_synthetic_lesion(size=(300, 300), seed=42)
-    # 3. Szélesvásznú (16:9)
-    images["wide_16x9"] = create_synthetic_lesion(size=(480, 270), seed=42)
-    # 4. Sötét kép
-    images["dark"] = create_synthetic_lesion(size=(400, 300),
-                                             lesion_color=(40, 20, 15),
-                                             bg_color=(80, 60, 55), seed=42)
-    # 5. Magas kontrasztú
-    images["high_contrast"] = create_synthetic_lesion(size=(400, 300),
-                                                      lesion_color=(30, 10, 10),
-                                                      bg_color=(240, 210, 200), seed=42)
-    # 6. Szőrös lézió (szőrszál-vonalakkal átfedett felület)
-    hairy = create_synthetic_lesion(size=(400, 300), seed=42)
-    draw_h = ImageDraw.Draw(hairy)
-    draw_h.line([(80, 50), (320, 250)], fill=(30, 20, 15), width=2)
-    draw_h.line([(120, 260), (280, 40)], fill=(40, 25, 20), width=3)
-    draw_h.line([(50, 180), (350, 120)], fill=(25, 15, 10), width=2)
-    images["hairy_lesion"] = hairy
+    base_dir = os.path.join(PROJECT_DIR, "valos_tesztkepek")
+    benign_dir = os.path.join(base_dir, "Benign")
+    malig_dir = os.path.join(base_dir, "Malignant")
+
+    if os.path.exists(benign_dir):
+        b_files = sorted(glob.glob(os.path.join(benign_dir, "*.jpg")))[:max_per_class]
+        for f in b_files:
+            name = f"benign_{os.path.splitext(os.path.basename(f))[0]}"
+            images[name] = Image.open(f).convert("RGB")
+
+    if os.path.exists(malig_dir):
+        m_files = sorted(glob.glob(os.path.join(malig_dir, "*.jpg")))[:max_per_class]
+        for f in m_files:
+            name = f"malignant_{os.path.splitext(os.path.basename(f))[0]}"
+            images[name] = Image.open(f).convert("RGB")
+
     return images
 
 
@@ -613,8 +596,8 @@ Példák:
         test_images = {img_name: img}
         print(f"  Betöltve: {args.image} ({img.size[0]}x{img.size[1]})")
     else:
-        test_images = create_test_images()
-        print(f"  {len(test_images)} szintetikus tesztkép generálva:")
+        test_images = load_real_test_images()
+        print(f"  {len(test_images)} valós klinikai tesztkép betöltve a valos_tesztkepek mappából:")
         for name, img in test_images.items():
             print(f"    • {name}: {img.size[0]}x{img.size[1]}")
 

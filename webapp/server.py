@@ -140,36 +140,61 @@ def square_crop_center(img: Image.Image) -> Image.Image:
 
 def apply_dull_razor(img: Image.Image) -> tuple[Image.Image, dict]:
     """
-    DullRazor digital hair removal algorithm (Lee et al., 1997).
+    Intelligens (Advanced) DullRazor digitális szőreltávolítás geometriai szűréssel.
     
-    Removes hair occlusions that can distort lesion borders and cause false positives:
-    1. Grayscale conversion
-    2. Morphological Black-Hat transform with a 7x7 rectangular structuring element
-    3. Binary thresholding to generate hair mask
-    4. Telea inpainting to reconstruct occluded skin patterns
+    A naiv DullRazor (Lee et al., 1997) hajlamos a pigmenthálózatot és a lézió finom
+    határait is szőrnek nézni, és inpaintinggel elmosni (mesterséges simítási artefaktum).
+    Ez a továbbfejlesztett megvalósítás:
+    1. Grayscale konverzió + 7x7 Black-Hat morfológiai szűrés
+    2. Küszöbölés (thresh=12)
+    3. Geometriai kontúrszűrés: csak a nyújtott, valódi szőrszerű alakzatokat
+       tartja meg (aspect_ratio >= 3.0 és hossz >= 15 px), kizárva a pigmentfoltokat
+    4. Szigorúbb aktiválási küszöb: csak akkor inpaintel, ha legalább 200 valódi szőrpixel van
+    5. Kisebb inpaintRadius=1 a környező szövetek elmosódásának megakadályozására
     """
     img_np = np.array(img)
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     
-    # Structuring element optimized for 224x224 input
+    # Morfológiai szűrőelem a sötét, vékony vonalak kiemelésére
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
     blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
     
-    # Isolate pixels noticeably darker than the surrounding skin/lesion
-    _, mask = cv2.threshold(blackhat, 12, 255, cv2.THRESH_BINARY)
+    # Nyers maszk
+    _, raw_mask = cv2.threshold(blackhat, 12, 255, cv2.THRESH_BINARY)
+    raw_hair_pixels = int(cv2.countNonZero(raw_mask))
     
-    hair_pixels = int(cv2.countNonZero(mask))
-    max_hair_pixels = int(0.20 * img_np.shape[0] * img_np.shape[1])
+    # Geometriai kontúrszűrés: a körkörös/szabálytalan pigmentek és léziószélek védelme
+    filtered_mask = np.zeros_like(raw_mask)
+    contours, _ = cv2.findContours(raw_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        aspect_ratio = max(w, h) / (min(w, h) + 1e-3)
+        if aspect_ratio >= 3.0 and max(w, h) >= 15:
+            cv2.drawContours(filtered_mask, [cnt], -1, 255, -1)
+            
+    filtered_hair_pixels = int(cv2.countNonZero(filtered_mask))
+    total_pixels = img_np.shape[0] * img_np.shape[1]
+    max_hair_pixels = int(0.20 * total_pixels)
     
-    # Only inpaint if hair is actually detected (>30 px), but avoid masking large dark lesions (<20% of image)
-    if 30 < hair_pixels < max_hair_pixels:
-        inpainted = cv2.inpaint(img_np, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-        return Image.fromarray(inpainted), {"hair_detected": True, "hair_pixels": hair_pixels}
+    # Csak akkor inpaintelünk, ha valódi szőrszál igazolt (min. 200 px) és nem fedi a kép >20%-át
+    if 200 <= filtered_hair_pixels < max_hair_pixels:
+        inpainted = cv2.inpaint(img_np, filtered_mask, inpaintRadius=1, flags=cv2.INPAINT_TELEA)
+        return Image.fromarray(inpainted), {
+            "hair_detected": True,
+            "raw_pixels": raw_hair_pixels,
+            "filtered_pixels": filtered_hair_pixels,
+            "inpaint_applied": True,
+        }
     
-    return img, {"hair_detected": False, "hair_pixels": hair_pixels}
+    return img, {
+        "hair_detected": filtered_hair_pixels >= 200,
+        "raw_pixels": raw_hair_pixels,
+        "filtered_pixels": filtered_hair_pixels,
+        "inpaint_applied": False,
+    }
 
 
-def preprocess_for_model(img: Image.Image, model_name: str, enable_hair_removal: bool = True) -> np.ndarray:
+def preprocess_for_model(img: Image.Image, model_name: str, enable_hair_removal: bool = False) -> np.ndarray:
     """
     Full preprocessing pipeline:
     1. Square crop from center (if not square)
