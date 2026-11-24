@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=4">
+    <link rel="stylesheet" href="/static/style.css?v=7">
     <title>DermAI Scan — Skin Lesion Screening</title>
 </head>
 
@@ -63,14 +63,13 @@
                     </div>
                 </button>
 
-                <button id="btn-upload" class="action-btn secondary" onclick="triggerUpload()">
+                <label id="btn-upload" for="file-input" class="action-btn secondary">
                     <div class="btn-text">
-                        <span class="btn-label">Load Image</span>
-                        <span class="btn-sublabel">Select from gallery or files</span>
+                        <span class="btn-label">Upload Image</span>
+                        <span class="btn-sublabel">Select file or drag and drop</span>
                     </div>
-                </button>
-                <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden
-                    onchange="handleFileSelect(event)">
+                </label>
+                <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(event)">
             </div>
 
             <div class="home-info">
@@ -182,20 +181,20 @@
         <!-- Screen: Results -->
         <main id="screen-results" class="screen screen-results">
             <div class="results-header">
-                <button class="text-nav-btn" onclick="goHome()">Back</button>
-                <h2>Analysis Results</h2>
+                <button class="text-nav-btn" onclick="goHome()">Vissza</button>
+                <h2>Kiértékelés Eredménye</h2>
                 <div style="width:50px"></div>
             </div>
             <div class="results-body" id="results-body">
                 <!-- Dynamically populated -->
             </div>
             <div class="results-actions">
-                <button class="btn-secondary" onclick="goHome()">New Scan</button>
+                <button class="btn-secondary" onclick="goHome()">Új vizsgálat</button>
             </div>
         </main>
     </div>
 
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=7"></script>
 </body>
 
 </html>

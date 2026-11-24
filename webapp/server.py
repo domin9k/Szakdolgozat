@@ -351,6 +351,7 @@ async def analyze_image(
     file: UploadFile = File(...),
     model: str = Query(default="both", description="Model to use: mobilenet, efficientnet, or both"),
     tta_steps: int = Query(default=5, ge=1, le=10, description="TTA steps for EfficientNet"),
+    force: bool = Query(default=False, description="Force analysis even if quality score is low"),
 ):
     """
     Analyze a skin lesion image.
@@ -359,22 +360,23 @@ async def analyze_image(
     """
     total_start = time.time()
 
-    # 1. Validate file type
-    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are accepted.")
-
-    # 2. Read and decode image
+    # 1. Read and decode image (supports all Pillow-compatible image formats)
     try:
         contents = await file.read()
+        if not contents or len(contents) == 0:
+            raise HTTPException(status_code=400, detail="Empty file uploaded.")
         img = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read image: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not read image: {str(e)}. Please ensure the file is a valid image (JPEG, PNG, WebP, etc.)."
+        )
 
-    # 3. Quality assessment
+    # 2. Quality assessment
     img_array_raw = np.array(img)
     quality = assess_image_quality(img_array_raw)
 
-    if not quality["is_acceptable"]:
+    if not quality["is_acceptable"] and not force:
         return JSONResponse(
             status_code=422,
             content={

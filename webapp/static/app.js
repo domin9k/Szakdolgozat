@@ -11,8 +11,43 @@ let selectedModel = 'both';
 let cameraStream = null;
 let facingMode = 'environment'; // rear camera by default
 
+// --- Helper: Universal Image Loader ---
+async function loadImageElement(source) {
+    if (typeof createImageBitmap === 'function') {
+        try {
+            return await createImageBitmap(source);
+        } catch (e) {
+            console.warn('createImageBitmap failed, using image fallback:', e);
+        }
+    }
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(source);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(img);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const img2 = new Image();
+                img2.onload = () => resolve(img2);
+                img2.onerror = reject;
+                img2.src = re.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(source);
+        };
+        img.src = url;
+    });
+}
+
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
+    // Setup Drag & Drop
+    setupDragAndDrop();
+
     // Animate splash
     const splashStatus = document.getElementById('splash-status');
 
@@ -219,27 +254,35 @@ function handleFileSelect(event) {
 async function showPreview(imageSource) {
     showScreen('preview');
 
-    // Load image and draw square cropped preview
-    const img = await createImageBitmap(imageSource);
     const canvas = document.getElementById('preview-canvas');
     const ctx = canvas.getContext('2d');
-
-    // Square crop from center
-    const side = Math.min(img.width, img.height);
-    const sx = (img.width - side) / 2;
-    const sy = (img.height - side) / 2;
 
     // Display at reasonable size
     const displaySize = Math.min(400, window.innerWidth - 48);
     canvas.width = displaySize;
     canvas.height = displaySize;
 
-    ctx.drawImage(img, sx, sy, side, side, 0, 0, displaySize, displaySize);
+    try {
+        // Load image using universal loader (supports bitmap + fallback)
+        const img = await loadImageElement(imageSource);
+
+        // Square crop from center
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        const side = Math.min(width, height);
+        const sx = (width - side) / 2;
+        const sy = (height - side) / 2;
+
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, displaySize, displaySize);
+    } catch (err) {
+        console.error('Failed to render preview image:', err);
+    }
 
     // Run quality check
     const qualityPanel = document.getElementById('quality-panel');
     const qualityBadge = document.getElementById('quality-badge');
     const qualityDetails = document.getElementById('quality-details');
+    const analyzeBtn = document.getElementById('btn-analyze');
 
     qualityBadge.textContent = 'Checking...';
     qualityBadge.className = 'quality-badge';
@@ -265,7 +308,7 @@ async function showPreview(imageSource) {
             qualityBadge.textContent = `Fair (${q.quality_score}/100)`;
             qualityBadge.className = 'quality-badge fair';
         } else {
-            qualityBadge.textContent = `Poor (${q.quality_score}/100)`;
+            qualityBadge.textContent = `Warning (${q.quality_score}/100)`;
             qualityBadge.className = 'quality-badge poor';
         }
 
@@ -298,19 +341,22 @@ async function showPreview(imageSource) {
 
         qualityDetails.innerHTML = metricsHtml;
 
-        // Disable analyze button if quality too poor
-        const analyzeBtn = document.getElementById('btn-analyze');
+        // Never hard-block analysis: allow "Analyze Anyway" with warning
+        analyzeBtn.disabled = false;
         if (!q.is_acceptable) {
-            analyzeBtn.disabled = true;
-            analyzeBtn.textContent = 'Quality too low';
+            analyzeBtn.textContent = 'Analyze Anyway (Quality Warning)';
+            analyzeBtn.onclick = () => analyzeImage(true);
         } else {
-            analyzeBtn.disabled = false;
             analyzeBtn.textContent = 'Analyze';
+            analyzeBtn.onclick = () => analyzeImage(false);
         }
     } catch (e) {
-        qualityBadge.textContent = 'Check failed';
+        qualityBadge.textContent = 'Check skipped';
         qualityBadge.className = 'quality-badge fair';
-        qualityDetails.innerHTML = '<div class="quality-warning"><span>Could not connect to server for quality check.</span></div>';
+        qualityDetails.innerHTML = '<div class="quality-warning"><span>Offline / Quality check unavailable. You can still proceed with analysis.</span></div>';
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'Analyze';
+        analyzeBtn.onclick = () => analyzeImage(false);
     }
 }
 
@@ -323,7 +369,7 @@ function selectModel(model) {
 }
 
 // --- Analyze Image ---
-async function analyzeImage() {
+async function analyzeImage(force = false) {
     if (!currentImage) return;
 
     showScreen('analyzing');
@@ -338,7 +384,7 @@ async function analyzeImage() {
     const formData = new FormData();
     formData.append('file', currentImage);
 
-    const url = `${API_BASE}/api/analyze?model=${selectedModel}&tta_steps=5`;
+    const url = `${API_BASE}/api/analyze?model=${selectedModel}&tta_steps=5&force=${force}`;
 
     try {
         stepEl.textContent = 'Sending to AI models...';
@@ -390,100 +436,290 @@ function showResults(data) {
     showScreen('results');
     const body = document.getElementById('results-body');
 
+    // Calculate aggregated score and consensus
+    const preds = Object.values(data.predictions || {});
+    let primaryPred = null;
+    if (data.predictions.efficientnet) {
+        primaryPred = data.predictions.efficientnet;
+    } else if (data.predictions.mobilenet) {
+        primaryPred = data.predictions.mobilenet;
+    }
+
+    // Determine overall risk level
+    let overallRisk = 'low';
+    let avgRawScore = 0;
+    if (preds.length > 0) {
+        const sumScores = preds.reduce((acc, p) => acc + (p.raw_score !== undefined ? p.raw_score : 0.5), 0);
+        avgRawScore = sumScores / preds.length;
+        
+        const hasHigh = preds.some(p => p.risk_level === 'high');
+        const hasUncertain = preds.some(p => p.risk_level === 'uncertain');
+        
+        if (hasHigh) {
+            overallRisk = 'high';
+        } else if (hasUncertain) {
+            overallRisk = 'uncertain';
+        } else {
+            overallRisk = 'low';
+        }
+    }
+
+    // Calculate gauge position (0% - 100%)
+    const gaugePercent = Math.min(Math.max(Math.round(avgRawScore * 100), 2), 98);
+
+    // Human-friendly content configurations
+    const verdictConfig = {
+        low: {
+            title: 'Alacsony kockázatú lelet',
+            subtitle: 'Jóindulatú bőrelváltozásra jellemző mintázat (Low Risk)',
+            badge: 'Megnyugtató lelet',
+            description: 'A mesterséges intelligencia modellek jóindulatú (benignus) bőrelváltozásra utaló jegyeket azonosítottak. Nem észlelhető a rosszindulatú sejtburjánzásra vagy melanómára jellemző atípusos mintázat.',
+            actionHeader: 'Ajánlott teendők',
+            actions: [
+                {
+                    title: 'Rendszeres önvizsgálat (ABCD szabály)',
+                    desc: 'Félévente-évente vizsgálja át anyajegyeit az A (Aszimmetria), B (Határ), C (Szín), D (Átmérő) és E (Változás) szempontok szerint.'
+                },
+                {
+                    title: 'Figyelje a változásokat',
+                    desc: 'Amennyiben a képlet alakja, színe megváltozik, növekedni kezd, viszket vagy vérzik, azonnal mutassa meg orvosnak.'
+                },
+                {
+                    title: 'Éves szűrővizsgálat',
+                    desc: 'Az évenkénti szakorvosi dermatoszkópos szűrés a leghatékonyabb módja a bőrrák korai megelőzésének.'
+                }
+            ]
+        },
+        uncertain: {
+            title: 'Bizonytalan / Határeset lelet',
+            subtitle: 'Kontroll vagy ismételt fotó javasolt (Inconclusive)',
+            badge: 'További vizsgálat ajánlott',
+            description: 'A modell határérték közeli pontszámot adott, vagy a kép sajátosságai miatt nem határozható meg kellő magabiztossággal a mintázat jellege. Javasoljuk a kép újbóli elkészítését jobb megvilágításban, vagy szakorvosi ellenőrzést.',
+            actionHeader: 'Mit tegyen most?',
+            actions: [
+                {
+                    title: 'Készítsen új képet optimális fényviszonyok közt',
+                    desc: 'Kerülje a közvetlen vakut vagy a túl erős árnyékot. Ügyeljen arra, hogy a képlet éles és fókuszált legyen a kamera közepén.'
+                },
+                {
+                    title: 'Szakorvosi dermatoszkópia',
+                    desc: 'Bizonytalan vagy nehezen megítélhető képletek esetén a bőrgyógyászati dermatoszkópos mikroszkópos vizsgálat ad pontos választ.'
+                },
+                {
+                    title: 'Ne próbálja mechanikusan kaparni vagy kezelni',
+                    desc: 'Bármilyen kétség esetén bízza szakorvosra az anyajegy pontos felmérését.'
+                }
+            ]
+        },
+        high: {
+            title: 'Szakorvosi konzultáció javasolt',
+            subtitle: 'Gyanús vagy atípusos mintázat (Elevated Risk)',
+            badge: 'Konzultáció indokolt',
+            description: 'A képen olyan atípusos vagy aszimmetrikus strukturális jegyek találhatók, amelyeknél a szakorvosi kivizsgálás erősen indokolt. Fontos: ez a gépi előszűrés NEM végleges diagnózis, de szakorvosi dermatoszkópos vizsgálatot tesz szükségessé.',
+            actionHeader: 'Kiemelten javasolt lépések',
+            actions: [
+                {
+                    title: 'Keresse fel a területileg illetékes bőrgyógyászt',
+                    desc: 'Javasoljuk, hogy a közeljövőben mutassa meg az elváltozást bőrgyógyász szakorvosnak dermatoszkópos vizsgálatra.'
+                },
+                {
+                    title: 'Kerülje a napozást és az irritációt',
+                    desc: 'Óvja a bőrfelületet a dörzsölődéstől, közvetlen UV-sugárzástól és mechanikai sérüléstől.'
+                },
+                {
+                    title: 'Őrizze meg a fotót összehasonlításként',
+                    desc: 'Az orvosi konzultáció során hasznos lehet bemutatni a rögzített képet az időbeli változások követésére.'
+                }
+            ]
+        }
+    };
+
+    const currentConfig = verdictConfig[overallRisk] || verdictConfig.uncertain;
+
+    // Consensus sentence
+    let consensusNote = '';
+    if (preds.length >= 2) {
+        const agreement = preds.every(p => p.risk_level === preds[0].risk_level);
+        if (agreement) {
+            consensusNote = 'Mindkét független AI modell (MobileNet és EfficientNet) azonos kategóriába sorolta a mintázatot.';
+        } else {
+            consensusNote = 'A modellek eltérő valószínűségi értéket adtak; a rendszer az óvatosság elve alapján a magasabb kockázatot veszi figyelembe.';
+        }
+    } else if (preds.length === 1) {
+        consensusNote = `Kiértékelés: ${preds[0].model} modell alapján.`;
+    }
+
     let html = '';
 
-    // Overall recommendation (when both models used)
-    if (data.overall_recommendation) {
-        // Determine overall risk from individual predictions
-        let overallRisk = 'low';
-        if (data.predictions.efficientnet) {
-            overallRisk = data.predictions.efficientnet.risk_level;
-        } else if (data.predictions.mobilenet) {
-            overallRisk = data.predictions.mobilenet.risk_level;
-        }
-
-        const labels = { low: 'Low Risk', high: 'High Risk', uncertain: 'Uncertain' };
-
-        html += `
-            <div class="result-overall ${overallRisk}">
-                <div class="result-overall-label">${labels[overallRisk]}</div>
-                <div class="result-overall-desc">${data.overall_recommendation}</div>
-            </div>
-        `;
-    }
-
-    // Individual model results
-    for (const [key, pred] of Object.entries(data.predictions)) {
-        const risk = pred.risk_level;
-        const scorePercent = Math.round(pred.raw_score * 100);
-
-        html += `
-            <div class="result-card">
-                <div class="result-card-header">
-                    <span class="result-model-name">${pred.model}</span>
-                    <span class="result-time">${pred.processing_time_ms}ms</span>
-                </div>
-                <div class="result-card-body">
-                    <div class="result-score-bar">
-                        <div class="result-score-fill ${risk}" style="width: ${scorePercent}%"></div>
-                        <div class="result-score-marker" style="left: calc(${scorePercent}% - 1.5px)"></div>
-                    </div>
-                    <div class="result-label-row">
-                        <span class="result-verdict ${risk}">${pred.label}</span>
-                        <span class="result-confidence">${pred.confidence_label} · ${pred.confidence_percent}%</span>
-                    </div>
-                    <div class="result-raw-score">
-                        Raw score: ${pred.raw_score} (0 = benign, 1 = malignant) · Threshold: 0.5
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // Timing
+    // 1. HERO VERDICT CARD
     html += `
-        <div class="timing-card">
-            <span class="label">Total server processing</span>
-            <span class="value">${data.total_processing_time_ms}ms</span>
-        </div>
-        <div class="timing-card">
-            <span class="label">Network round-trip</span>
-            <span class="value">${data._networkTime}ms</span>
+        <div class="result-hero-card ${overallRisk}">
+            <div class="result-hero-badge-wrap">
+                <span class="result-hero-badge ${overallRisk}">${currentConfig.badge}</span>
+                <span class="result-hero-consensus">${consensusNote}</span>
+            </div>
+            
+            <h1 class="result-hero-title">${currentConfig.title}</h1>
+            <p class="result-hero-subtitle">${currentConfig.subtitle}</p>
+            <p class="result-hero-desc">${currentConfig.description}</p>
+
+            <!-- Risk Gauge Meter -->
+            <div class="risk-gauge-container">
+                <div class="risk-gauge-labels">
+                    <span class="gauge-lbl-low">Jóindulatú</span>
+                    <span class="gauge-lbl-mid">Bizonytalan</span>
+                    <span class="gauge-lbl-high">Gyanús</span>
+                </div>
+                <div class="risk-gauge-track">
+                    <div class="risk-gauge-marker" style="left: ${gaugePercent}%" title="Becsült kockázat: ${gaugePercent}%">
+                        <div class="marker-pin ${overallRisk}"></div>
+                        <span class="marker-bubble">${gaugePercent}%</span>
+                    </div>
+                </div>
+                <div class="risk-gauge-subtext">
+                    Kockázati indikátor (0% = biztosan jóindulatú, 100% = erősen atípusos)
+                </div>
+            </div>
         </div>
     `;
 
-    // Quality warnings in results
-    if (data.quality && data.quality.warnings && data.quality.warnings.length > 0) {
+    // 2. ACTIONABLE GUIDANCE (Mit tegyek most?)
+    html += `
+        <div class="result-guidance-card">
+            <h3 class="guidance-heading">${currentConfig.actionHeader}</h3>
+            <div class="guidance-list">
+                ${currentConfig.actions.map((act, idx) => `
+                    <div class="guidance-item">
+                        <div class="guidance-num">${idx + 1}</div>
+                        <div class="guidance-content">
+                            <strong class="guidance-item-title">${act.title}</strong>
+                            <p class="guidance-item-desc">${act.desc}</p>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // 3. MODEL SUMMARIES (User-friendly view)
+    html += `
+        <div class="result-models-summary">
+            <h3 class="summary-heading">Alkalmazott mesterséges intelligencia modellek</h3>
+            <div class="models-grid">
+    `;
+
+    for (const [key, pred] of Object.entries(data.predictions)) {
+        const risk = pred.risk_level;
+        const confidenceText = `${pred.confidence_label} (${pred.confidence_percent}%)`;
+        const readableVerdict = risk === 'low' ? 'Jóindulatú mintázat' :
+                                risk === 'high' ? 'Gyanús mintázat' : 'Bizonytalan mintázat';
+        
+        const friendlyName = key === 'efficientnet' ? 'EfficientNet (Nagy pontosságú mélyháló)' :
+                             key === 'mobilenet' ? 'MobileNetV2 (Gyors szűrőmodell)' : pred.model;
+
         html += `
-            <div class="result-quality">
-                <div class="result-quality-title">Image Quality Notes (Score: ${data.quality.quality_score}/100)</div>
-                <div class="result-quality-warnings">
-                    ${data.quality.warnings.map(w => `<div class="rq-warning"><span>${w}</span></div>`).join('')}
+            <div class="model-summary-card ${risk}">
+                <div class="model-card-top">
+                    <span class="model-friendly-name">${friendlyName}</span>
+                    <span class="model-risk-pill ${risk}">${readableVerdict}</span>
+                </div>
+                <div class="model-confidence-row">
+                    <span class="model-conf-label">Megbízhatóság:</span>
+                    <span class="model-conf-val">${confidenceText}</span>
                 </div>
             </div>
         `;
     }
 
-    // Disclaimer
     html += `
-        <div class="disclaimer">
-            <p><strong>Disclaimer:</strong> This is an AI-based screening tool and NOT a medical diagnosis. 
-            Results should be interpreted by a qualified dermatologist. If in doubt, always seek professional medical advice.</p>
+            </div>
+        </div>
+    `;
+
+    // 4. QUALITY REPORT (IF ANY)
+    if (data.quality) {
+        const qScore = data.quality.quality_score;
+        const qAcceptable = data.quality.is_acceptable;
+        const qWarnings = data.quality.warnings || [];
+
+        html += `
+            <div class="result-quality-box">
+                <div class="quality-box-header">
+                    <span class="quality-box-title">Képminőség értékelése</span>
+                    <span class="quality-box-score ${qAcceptable ? 'good' : 'warning'}">Minőség: ${qScore}/100</span>
+                </div>
+                ${qWarnings.length > 0 ? `
+                    <div class="quality-box-warnings">
+                        ${qWarnings.map(w => `<div class="qb-warn">Megjegyzés: ${w}</div>`).join('')}
+                    </div>
+                ` : `
+                    <div class="quality-box-ok">A feltöltött kép élessége és megvilágítása megfelelt a vizsgálati feltételeknek.</div>
+                `}
+            </div>
+        `;
+    }
+
+    // 5. COLLAPSIBLE TECHNICAL & TELEMETRY DETAILS
+    html += `
+        <details class="tech-details-accordion">
+            <summary class="tech-details-summary">
+                <span>Részletes technikai és diagnosztikai adatok (fejlesztőknek és orvosoknak)</span>
+                <span class="tech-details-arrow">›</span>
+            </summary>
+            <div class="tech-details-content">
+                <table class="tech-table">
+                    <tbody>
+                        ${Object.entries(data.predictions).map(([k, p]) => `
+                            <tr>
+                                <td><strong>${p.model} nyers pontszám (raw score)</strong></td>
+                                <td><code>${p.raw_score}</code> (Döntési határ: 0.50)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>${p.model} számítási idő</strong></td>
+                                <td>${p.processing_time_ms} ms</td>
+                            </tr>
+                        `).join('')}
+                        <tr>
+                            <td><strong>Szerveroldali teljes futási idő</strong></td>
+                            <td>${data.total_processing_time_ms} ms</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Hálózati oda-vissza út (RTT)</strong></td>
+                            <td>${data._networkTime} ms</td>
+                        </tr>
+                        ${data.image_info ? `
+                            <tr>
+                                <td><strong>Bemeneti felbontás</strong></td>
+                                <td>${data.image_info.original_size} → ${data.image_info.processed_size}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Digitális hajeltávolítás (DullRazor)</strong></td>
+                                <td>${data.image_info.hair_removal && data.image_info.hair_removal.hair_detected ? 
+                                    `Alkalmazva (${data.image_info.hair_removal.pixels_modified} képpont)` : 
+                                    'Nem volt szükség szőrszál-korrekcióra'}</td>
+                            </tr>
+                        ` : ''}
+                        ${data.quality ? `
+                            <tr>
+                                <td><strong>Képélesség (Laplace-variancia)</strong></td>
+                                <td>${data.quality.blur ? data.quality.blur.laplacian_var : 'N/A'} (Küszöb: 50.0)</td>
+                            </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    `;
+
+    // 6. MEDICAL DISCLAIMER
+    html += `
+        <div class="disclaimer-banner">
+            <div class="disclaimer-title">Fontos orvosi tájékoztatás</div>
+            <p>A DermAI Scan egy mesterséges intelligencián alapuló kísérleti előszűrő rendszer, amely <strong>nem helyettesíti a szakképzett orvosi vizsgálatot</strong> és nem ad hivatalos orvosi diagnózist. Amennyiben bármilyen kételye vagy észlelhető bőrelváltozása van, kérjük, haladéktalanul forduljon bőrgyógyász szakorvoshoz!</p>
         </div>
     `;
 
     body.innerHTML = html;
-
-    // Animate score bars after render
-    requestAnimationFrame(() => {
-        body.querySelectorAll('.result-score-fill').forEach(el => {
-            const width = el.style.width;
-            el.style.width = '0%';
-            requestAnimationFrame(() => {
-                el.style.width = width;
-            });
-        });
-    });
 }
 
 function showQualityError(data) {
@@ -491,24 +727,77 @@ function showQualityError(data) {
     const body = document.getElementById('results-body');
 
     let html = `
-        <div class="result-overall uncertain">
-            <div class="result-overall-label">Image Quality Too Low</div>
-            <div class="result-overall-desc">The image does not meet the minimum quality requirements for reliable analysis. Please retake or upload a better image.</div>
+        <div class="result-hero-card uncertain">
+            <div class="result-hero-badge-wrap">
+                <span class="result-hero-badge uncertain">Figyelmeztetés</span>
+            </div>
+            <h1 class="result-hero-title">Gyenge képminőség észlelve</h1>
+            <p class="result-hero-subtitle">Image Quality Warning</p>
+            <p class="result-hero-desc">
+                A feltöltött fotó élessége vagy megvilágítása elmarad az optimális vizsgálati szinttől. 
+                Gyenge minőségű képen a mesterséges intelligencia modellek nem tudnak megbízható kiértékelést garantálni.
+            </p>
         </div>
     `;
 
     if (data.quality) {
         html += `
-            <div class="result-quality">
-                <div class="result-quality-title">Quality Issues (Score: ${data.quality.quality_score}/100)</div>
-                <div class="result-quality-warnings">
-                    ${data.quality.warnings.map(w => `<div class="rq-warning"><span>${w}</span></div>`).join('')}
+            <div class="result-quality-box">
+                <div class="quality-box-header">
+                    <span class="quality-box-title">Részletes minőségi hibák</span>
+                    <span class="quality-box-score warning">Pontszám: ${data.quality.quality_score}/100</span>
+                </div>
+                <div class="quality-box-warnings">
+                    ${(data.quality.warnings || []).map(w => `<div class="qb-warn">Figyelem: ${w}</div>`).join('')}
                 </div>
             </div>
         `;
     }
 
+    html += `
+        <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.65rem;">
+            <button class="btn-primary" style="width: 100%; border-radius: 0;" onclick="analyzeImage(true)">Elemzés végrehajtása ennek ellenére</button>
+            <button class="btn-secondary" style="width: 100%; border-radius: 0;" onclick="goHome()">Új, élesebb kép választása</button>
+        </div>
+    `;
+
     body.innerHTML = html;
+}
+
+// --- Drag & Drop Support ---
+function setupDragAndDrop() {
+    const uploadBtn = document.getElementById('btn-upload');
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        window.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (uploadBtn) uploadBtn.classList.add('drag-over');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        window.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (uploadBtn) uploadBtn.classList.remove('drag-over');
+        }, false);
+    });
+
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (uploadBtn) uploadBtn.classList.remove('drag-over');
+
+        const dt = e.dataTransfer;
+        if (!dt) return;
+        const files = dt.files;
+        if (files && files.length > 0) {
+            const file = files[0];
+            currentImage = file;
+            showPreview(file);
+        }
+    }, false);
 }
 
 // --- Utilities ---
