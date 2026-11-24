@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=7">
+    <link rel="stylesheet" href="/static/style.css?v=10">
     <title>DermAI Scan — Skin Lesion Screening</title>
 </head>
 
@@ -56,20 +56,20 @@
             </div>
 
             <div class="home-actions">
-                <button id="btn-camera" class="action-btn primary" onclick="openCamera()">
+                <button type="button" id="btn-camera" class="action-btn primary" onclick="openCamera()">
                     <div class="btn-text">
                         <span class="btn-label">Take Picture</span>
                         <span class="btn-sublabel">Use camera with guide overlay</span>
                     </div>
                 </button>
 
-                <label id="btn-upload" for="file-input" class="action-btn secondary">
+                <button type="button" id="btn-upload" class="action-btn secondary" onclick="triggerUpload()">
                     <div class="btn-text">
                         <span class="btn-label">Upload Image</span>
                         <span class="btn-sublabel">Select file or drag and drop</span>
                     </div>
-                </label>
-                <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(event)">
+                </button>
+                <input type="file" id="file-input" style="position: absolute; opacity: 0; width: 0; height: 0; z-index: -1;">
             </div>
 
             <div class="home-info">
@@ -194,7 +194,7 @@
         </main>
     </div>
 
-    <script src="/static/app.js?v=7"></script>
+    <script src="/static/app.js?v=10"></script>
 </body>
 
 </html>

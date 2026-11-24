@@ -45,7 +45,8 @@ async function loadImageElement(source) {
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // Setup Drag & Drop
+    // Setup File Upload & Drag & Drop
+    setupFileUpload();
     setupDragAndDrop();
 
     // Animate splash
@@ -116,6 +117,8 @@ function showScreen(screenId) {
 
 function goHome() {
     stopCamera();
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) fileInput.value = '';
     showScreen('home');
 }
 
@@ -236,18 +239,34 @@ function capturePhoto() {
 
 // --- File Upload ---
 function triggerUpload() {
-    document.getElementById('file-input').click();
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) {
+        fileInput.value = '';
+        fileInput.click();
+    }
+}
+
+function setupFileUpload() {
+    const fileInput = document.getElementById('file-input');
+    if (!fileInput) return;
+    fileInput.addEventListener('change', handleFileSelect);
 }
 
 function handleFileSelect(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = event.target ? event.target.files : (event.files || null);
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const isImage = (file.type && file.type.startsWith('image/')) ||
+                    /\.(jpe?g|png|webp|bmp|gif|tiff?|heic|heif)$/i.test(file.name || '');
+
+    if (!isImage) {
+        alert('Kérjük, képfájlt válasszon ki (pl. JPG, PNG, WebP)!');
+        return;
+    }
 
     currentImage = file;
     showPreview(file);
-
-    // Reset input so same file can be re-selected
-    event.target.value = '';
 }
 
 // --- Preview & Quality Check ---
@@ -794,6 +813,12 @@ function setupDragAndDrop() {
         const files = dt.files;
         if (files && files.length > 0) {
             const file = files[0];
+            const isImage = (file.type && file.type.startsWith('image/')) ||
+                            /\.(jpe?g|png|webp|bmp|gif|tiff?|heic|heif)$/i.test(file.name || '');
+            if (!isImage) {
+                alert('Kérjük, képfájlt válasszon ki (pl. JPG, PNG, WebP)!');
+                return;
+            }
             currentImage = file;
             showPreview(file);
         }
